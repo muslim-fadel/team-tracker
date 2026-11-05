@@ -446,7 +446,6 @@ table.mx{border-collapse:separate;border-spacing:0;width:100%;font-variant-numer
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script id="app-js">
 (function(){
 const html=document.documentElement;html.dir="rtl";html.lang="ar";
@@ -713,7 +712,7 @@ function matrix(){
 }
 function updateSaveUI(){
   const st=document.getElementById("saveState"),tx=document.getElementById("saveTxt");
-  if(st&&cloud.user){st.classList.toggle("dirty",cloud.pending||!!cloud.conflict);tx.textContent=cloud.conflict?"يوجد تعارض بين نسختين":cloud.offline?"غير متصل، ستُرفع التعديلات لاحقاً":cloud.pending||cloud.pushing?"جارٍ الحفظ…":"محفوظ في السحابة"}
+  if(st&&cloud.code){st.classList.toggle("dirty",cloud.pending||!!cloud.conflict);tx.textContent=cloud.conflict?"يوجد تعارض بين نسختين":cloud.offline?"غير متصل، ستُرفع التعديلات لاحقاً":cloud.pending||cloud.pushing?"جارٍ الحفظ…":"محفوظ في السحابة"}
   else if(st&&cloudEnabled){st.classList.add("dirty");tx.textContent="محفوظ في هذا الجهاز فقط"}
   else if(st){st.classList.toggle("dirty",dirty);tx.textContent=dirty?(artifactNS&&!readOnly?"تغييرات غير محفوظة":"محفوظ في هذا الجهاز"):"كل شيء محفوظ"}
   document.querySelectorAll('[data-act="save"]').forEach(b=>b.disabled=!dirty);
@@ -800,7 +799,6 @@ function buildDoc(state){
    +'<script type="application/json" id="state">'+json+'<\/script>\n'
    +'<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>\n'
    +'<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script>\n'
-   +'<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"><\/script>\n'
    +'<script id="app-js">'+js+'<\/script></body></html>';
 }
 async function save(){
@@ -916,17 +914,22 @@ const useNativePrint=(()=>{
 })();
 if(useNativePrint&&document.fonts){['500 13px "IBM Plex Sans Arabic"','600 13px "IBM Plex Sans Arabic"','700 13px "IBM Plex Sans Arabic"','700 17px "Readex Pro"'].forEach(f=>{document.fonts.load(f,"ع").catch(()=>{})})}
 
-/* ---------- Supabase sync. Empty URL/key = local-only. The key must be the public anon/publishable one, never service_role. ---------- */
+/* ---------- Cloud sync via Supabase RPC. Empty URL/key = local-only. The key is the public publishable one; tracker_get/tracker_save check the access code on the server. ---------- */
 const SUPABASE_URL="https://bvgjalodboilkqusuegu.supabase.co",SUPABASE_KEY="sb_publishable_-1uWRNFs23fMgWYZT2eG-g_xE0b2HVT";
-const CLOUD_KEY="team-tracker-cloud",CLOUD_TABLE="tracker_state";
+const CLOUD_KEY="team-tracker-cloud",CODE_KEY="team-tracker-code";
 const cloudEnabled=!!(SUPABASE_URL&&SUPABASE_KEY);
-const sb=cloudEnabled&&window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
-const cloud={user:null,version:null,synced:false,pending:false,pushing:false,again:false,offline:false,conflict:null,timer:null,retry:null};
+const cloud={code:null,version:null,synced:false,pending:false,pushing:false,again:false,offline:false,conflict:null,timer:null,retry:null};
 let loginOpen=false;
 const embeddedSrc=document.getElementById("state").textContent;
 
+async function rpc(fn,args){
+  const body=JSON.stringify(args);
+  const r=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{method:"POST",headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},body,keepalive:body.length<60000});
+  if(!r.ok)throw new Error("rpc "+r.status);
+  return r.json();
+}
 function readCloudCache(){try{return JSON.parse(localStorage.getItem(CLOUD_KEY)||"null")}catch(e){return null}}
-function writeCloudCache(){if(!cloud.user)return;try{localStorage.setItem(CLOUD_KEY,JSON.stringify({uid:cloud.user.id,version:cloud.version,pending:cloud.pending,state:S}))}catch(e){}}
+function writeCloudCache(){if(!cloud.code)return;try{localStorage.setItem(CLOUD_KEY,JSON.stringify({version:cloud.version,pending:cloud.pending,state:S}))}catch(e){}}
 function writeDraft(){try{localStorage.setItem(DRAFT_KEY,JSON.stringify({base:embedded.ts,state:S,dirty}))}catch(e){}}
 function validState(s){return !!s&&Array.isArray(s.teams)&&Array.isArray(s.sections)}
 function normalizeState(s){s.teams.forEach(t=>{for(const k in t.r){const c=t.r[k];c.p=c.p>=100?100:c.p>0?50:0}});return s}
@@ -934,12 +937,12 @@ function normalizeState(s){s.teams.forEach(t=>{for(const k in t.r){const c=t.r[k
 const canon=v=>JSON.stringify(v,(k,x)=>x&&typeof x==="object"&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,n)=>(o[n]=x[n],o),{}):x);
 function sameData(a,b){return canon(a)===canon(b)}
 function cloudTouch(){
-  if(!cloud.user)return;
+  if(!cloud.code)return;
   cloud.pending=true;writeCloudCache();
   clearTimeout(cloud.timer);cloud.timer=setTimeout(cloudPush,1200);
 }
 function cloudRetryLater(){cloud.offline=true;clearTimeout(cloud.retry);cloud.retry=setTimeout(cloudResume,20000)}
-function cloudResume(){if(!cloud.user)return;if(cloud.pending&&cloud.synced)cloudPush();else cloudSync()}
+function cloudResume(){if(!cloud.code)return;if(cloud.pending&&cloud.synced)cloudPush();else cloudSync()}
 function adoptRemote(row){
   const changed=!sameData(S,row.state);
   S=normalizeState(row.state);cloud.version=row.version;cloud.pending=false;cloud.conflict=null;cloud.synced=true;dirty=false;
@@ -947,50 +950,58 @@ function adoptRemote(row){
   if(changed)rerender();else updateSaveUI();
 }
 function startConflict(row){cloud.conflict=row;cloud.synced=true;rerender()}
-async function cloudSync(){
-  if(!sb||!cloud.user||cloud.conflict)return;
-  const uid=cloud.user.id;
-  const {data,error}=await sb.from(CLOUD_TABLE).select("state,version,updated_at").eq("user_id",uid).maybeSingle();
-  if(!cloud.user||cloud.user.id!==uid)return;
-  if(error){cloudRetryLater();updateSaveUI();return}
+/* The code stopped working (it was changed): ask for the new one. Unsaved edits stay on this device. */
+function cloudRejected(reason){
+  if(reason==="locked"){cloudRetryLater();updateSaveUI();return}
+  try{localStorage.removeItem(CODE_KEY)}catch(e){}
+  clearTimeout(cloud.timer);clearTimeout(cloud.retry);
+  cloud.code=null;cloud.synced=false;cloud.offline=false;cloud.version=null;cloud.conflict=null;
+  loginOpen=true;rerender();toast("الرمز تغيّر، أدخل الرمز الجديد.");
+}
+function cloudApply(res){
   cloud.offline=false;clearTimeout(cloud.retry);
-  const c=readCloudCache(),mine=c&&c.uid===uid&&validState(c.state)?c:null;
+  const data=res.state?res:null;
+  const c=readCloudCache(),mine=c&&validState(c.state)?c:null;
   if(data&&!validState(data.state)){toast("بيانات السحابة غير صالحة، لم تُستبدل بياناتك.");return}
-  /* dirty covers edits typed while signed out; cloud.pending covers edits typed during this fetch. */
+  /* dirty covers edits typed before the code was entered; cloud.pending covers edits typed during this fetch. */
   if(!cloud.pending&&!dirty&&mine&&mine.pending){S=normalizeState(mine.state);applyAccent()}
   const pending=cloud.pending||dirty||!!(mine&&mine.pending);
-  if(!data){cloud.version=null;cloud.pending=true;cloud.synced=true;writeCloudCache();rerender();cloudPush();return}
+  if(!data){cloud.version=res.version;cloud.pending=true;cloud.synced=true;writeCloudCache();rerender();cloudPush();return}
   if(mine){
     if(!pending){adoptRemote(data);return}
     if(data.version===mine.version){cloud.version=data.version;cloud.pending=true;cloud.synced=true;rerender();cloudPush();return}
     cloud.pending=true;startConflict(data);return;
   }
-  /* First sign-in on this device: never silently drop data typed here before syncing. */
+  /* First time on this device: never silently drop data typed here before syncing. */
   if(pending&&!sameData(S.teams,data.state.teams)){cloud.pending=true;startConflict(data);return}
   adoptRemote(data);
 }
+async function cloudSync(){
+  if(!cloud.code||cloud.conflict)return;
+  const code=cloud.code;
+  let res;
+  try{res=await rpc("tracker_get",{p_code:code})}catch(e){cloudRetryLater();updateSaveUI();return}
+  if(cloud.code!==code)return;
+  if(!res.ok){cloudRejected(res.reason);return}
+  cloudApply(res);
+}
 async function cloudPush(){
-  if(!sb||!cloud.user||cloud.conflict||!cloud.pending||!cloud.synced)return;
+  if(!cloud.code||cloud.conflict||!cloud.pending||!cloud.synced)return;
   if(cloud.pushing){cloud.again=true;return}
   clearTimeout(cloud.timer);
   cloud.pushing=true;cloud.again=false;updateSaveUI();
-  const uid=cloud.user.id,snap=JSON.stringify(S),state=JSON.parse(snap);
+  const snap=JSON.stringify(S);
   try{
-    const res=cloud.version==null
-      ?await sb.from(CLOUD_TABLE).insert({user_id:uid,state,version:1}).select("version")
-      :await sb.from(CLOUD_TABLE).update({state,version:cloud.version+1,updated_at:new Date().toISOString()}).eq("user_id",uid).eq("version",cloud.version).select("version");
-    if(res.error&&res.error.code!=="23505"){cloudRetryLater();return}
-    const row=res.data&&res.data[0];
-    if(!row){
-      /* Another device saved first: fetch its copy and let the user choose. */
-      const cur=await sb.from(CLOUD_TABLE).select("state,version,updated_at").eq("user_id",uid).maybeSingle();
-      if(cur.error){cloudRetryLater();return}
-      if(!cur.data){cloud.version=null;cloud.again=true;return}
-      if(!validState(cur.data.state)){cloud.version=cur.data.version;cloud.again=true;return}
-      cloud.offline=false;startConflict(cur.data);return;
-    }
+    const res=await rpc("tracker_save",{p_code:cloud.code,p_state:JSON.parse(snap),p_version:cloud.version});
+    if(!res.ok){cloudRejected(res.reason);return}
     cloud.offline=false;clearTimeout(cloud.retry);
-    cloud.version=row.version;
+    /* Another device saved first: let the user choose. */
+    if(!res.saved){
+      if(validState(res.state))startConflict(res);
+      else{cloud.version=res.version;cloud.again=true}
+      return;
+    }
+    cloud.version=res.version;
     cloud.pending=JSON.stringify(S)!==snap;
     if(!cloud.pending)dirty=false;
     writeDraft();writeCloudCache();
@@ -1010,52 +1021,46 @@ function conflictBanner(){
 }
 function loginSheet(){
   const head=`<div class="backdrop" data-close="1"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="loginTitle"><div class="grab"></div><div class="sheet-head"><h3 id="loginTitle">الحفظ السحابي</h3><button class="icon-btn" data-close="1" aria-label="إغلاق">${I.x}</button></div>`;
-  if(cloud.user)return head+`<div class="cloud-acct">مسجّل الدخول باسم: <bdi>${esc(cloud.user.email||"")}</bdi></div><button class="btn ghost" id="cloudOut">تسجيل الخروج</button><button class="btn primary" data-close="1">تم</button></div>`;
-  if(!sb)return head+`<div class="hint">تعذّر تحميل أداة الحفظ السحابي. تحقق من الاتصال ثم أعد فتح الصفحة.</div><button class="btn primary" data-close="1">تم</button></div>`;
-  return head+`<div class="hint">سجّل الدخول لتظهر بياناتك نفسها على كل أجهزتك.</div>
+  if(cloud.code)return head+`<div class="cloud-acct">هذا الجهاز متصل بالحفظ السحابي.</div><button class="btn ghost" id="cloudOut">إزالة الرمز من هذا الجهاز</button><button class="btn primary" data-close="1">تم</button></div>`;
+  return head+`<div class="hint">اكتب الرمز مرة واحدة على هذا الجهاز لتظهر بياناتك نفسها على كل أجهزتك.</div>
     <form class="login-form" id="loginForm">
-      <div><label class="field-label" for="loginEmail">البريد الإلكتروني</label><input id="loginEmail" name="email" type="email" autocomplete="username" autocapitalize="none" required></div>
-      <div><label class="field-label" for="loginPass">كلمة المرور</label><input id="loginPass" name="password" type="password" autocomplete="current-password" required></div>
+      <div><label class="field-label" for="loginCode">الرمز</label><input id="loginCode" name="code" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required></div>
       <div class="login-err" id="loginErr" role="alert"></div>
-      <button class="btn primary" type="submit" id="loginBtn">تسجيل الدخول</button>
+      <button class="btn primary" type="submit" id="loginBtn">متابعة</button>
     </form></div>`;
 }
 async function cloudSignIn(form){
-  const err=document.getElementById("loginErr"),btn=document.getElementById("loginBtn");
-  err.textContent="";btn.disabled=true;
+  const err=document.getElementById("loginErr"),btn=document.getElementById("loginBtn"),code=form.elements.code.value.trim();
+  err.textContent="";if(!code)return;btn.disabled=true;
   try{
-    const {error}=await sb.auth.signInWithPassword({email:form.elements.email.value.trim(),password:form.elements.password.value});
-    if(error){err.textContent=error.status===400?"البريد أو كلمة المرور غير صحيحة.":"تعذّر تسجيل الدخول. تحقق من الاتصال وحاول مرة أخرى.";btn.disabled=false}
-  }catch(e){err.textContent="تعذّر تسجيل الدخول. تحقق من الاتصال وحاول مرة أخرى.";btn.disabled=false}
+    const res=await rpc("tracker_get",{p_code:code});
+    if(!res.ok){err.textContent=res.reason==="locked"?"محاولات خاطئة كثيرة. انتظر 5 دقائق ثم حاول مرة أخرى.":"الرمز غير صحيح.";btn.disabled=false;return}
+    cloud.code=code;cloud.pending=false;cloud.version=null;cloud.synced=false;
+    try{localStorage.setItem(CODE_KEY,code)}catch(e){}
+    loginOpen=false;rerender();cloudApply(res);
+  }catch(e){err.textContent="تعذّر الاتصال. تحقق من الإنترنت وحاول مرة أخرى.";btn.disabled=false}
 }
 async function cloudSignOut(){
   if(cloud.pending)await cloudPush();
-  if(cloud.pending){toast("لم تُرفع كل التعديلات بعد، لذلك لم يتم تسجيل الخروج.");return}
-  try{await sb.auth.signOut({scope:"local"})}catch(e){}
-  cloud.user=null;cloud.version=null;cloud.synced=false;cloud.offline=false;clearTimeout(cloud.retry);clearTimeout(cloud.timer);
+  if(cloud.pending){toast("لم تُرفع كل التعديلات بعد، لذلك لم يُزَل الرمز.");return}
+  clearTimeout(cloud.retry);clearTimeout(cloud.timer);
+  cloud.code=null;cloud.version=null;cloud.synced=false;cloud.offline=false;
   /* Leave no team data behind on this device. */
-  try{localStorage.removeItem(CLOUD_KEY);localStorage.removeItem(DRAFT_KEY)}catch(e){}
+  try{localStorage.removeItem(CODE_KEY);localStorage.removeItem(CLOUD_KEY);localStorage.removeItem(DRAFT_KEY)}catch(e){}
   S=normalizeState(JSON.parse(embeddedSrc));dirty=false;applyAccent();rerender();
 }
-function onSession(session,initial){
-  const u=session&&session.user||null;
-  if(!u&&initial){loginOpen=true;rerender();return}
-  if((u&&u.id)===(cloud.user&&cloud.user.id)){cloud.user=u||cloud.user;return}
-  cloud.user=u;cloud.version=null;cloud.synced=false;cloud.conflict=null;cloud.offline=false;
-  if(u){cloud.pending=false;loginOpen=false;rerender();cloudSync()}else rerender();
-}
-if(sb){
-  /* Deferred: supabase-js deadlocks if its client is called inside this callback. */
-  sb.auth.onAuthStateChange((ev,session)=>{setTimeout(()=>onSession(session,ev==="INITIAL_SESSION"),0)});
+if(cloudEnabled){
+  try{cloud.code=localStorage.getItem(CODE_KEY)}catch(e){}
+  if(cloud.code)setTimeout(cloudSync,0);else loginOpen=true;
   document.addEventListener("visibilitychange",()=>{
-    if(!cloud.user)return;
+    if(!cloud.code)return;
     if(document.visibilityState==="hidden"){if(cloud.pending)cloudPush();return}
     if(cloud.pending){cloudResume();return}
     const a=document.activeElement;if(a&&(a.tagName==="INPUT"||a.tagName==="TEXTAREA"))return;
     cloudSync();
   });
   window.addEventListener("online",cloudResume);
-  window.addEventListener("pagehide",()=>{if(cloud.user&&cloud.pending)cloudPush()});
+  window.addEventListener("pagehide",()=>{if(cloud.code&&cloud.pending)cloudPush()});
 }
 
 render();

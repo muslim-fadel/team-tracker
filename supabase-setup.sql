@@ -1,30 +1,117 @@
 -- Run once in Supabase: SQL Editor > New query > Run.
--- One row per signed-in user. Row Level Security keeps each row visible to its owner only.
+-- BEFORE running: replace CHANGE_ME at the bottom of this file with your own code (8+ characters, no ' character).
+-- Do not save your real code back into this file: this repository is public.
+-- To change the code later, run the last block again with a new code. The data is kept.
 
-create table if not exists public.tracker_state (
-  user_id    uuid primary key default auth.uid() references auth.users (id) on delete cascade,
-  state      jsonb not null,
-  version    bigint not null default 1,
-  updated_at timestamptz not null default now()
+create extension if not exists pgcrypto with schema extensions;
+
+-- One row holds all the data. Nothing can read it directly: only the functions below, after checking the code.
+create table if not exists public.tracker_shared (
+  id           boolean primary key default true check (id),
+  code_hash    text not null,
+  state        jsonb,
+  version      bigint not null default 0,
+  updated_at   timestamptz not null default now(),
+  failed       int not null default 0,
+  locked_until timestamptz
 );
 
-alter table public.tracker_state enable row level security;
+alter table public.tracker_shared enable row level security;
+revoke all on public.tracker_shared from public, anon, authenticated;
 
-revoke all on public.tracker_state from anon, public;
-grant select, insert, update on public.tracker_state to authenticated;
+-- Returns 'ok', 'bad_code' or 'locked'. Ten wrong codes in a row lock access for 5 minutes.
+create or replace function public.tracker_check(p_code text)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  r public.tracker_shared;
+begin
+  select * into r from public.tracker_shared where id for update;
+  if not found then
+    return 'bad_code';
+  end if;
+  if r.locked_until is not null and r.locked_until > now() then
+    return 'locked';
+  end if;
+  if extensions.crypt(coalesce(p_code, ''), r.code_hash) = r.code_hash then
+    if r.failed > 0 or r.locked_until is not null then
+      update public.tracker_shared set failed = 0, locked_until = null where id;
+    end if;
+    return 'ok';
+  end if;
+  update public.tracker_shared
+     set failed = case when r.failed + 1 >= 10 then 0 else r.failed + 1 end,
+         locked_until = case when r.failed + 1 >= 10 then now() + interval '5 minutes' else null end
+   where id;
+  return 'bad_code';
+end;
+$$;
 
-drop policy if exists "owner can read" on public.tracker_state;
-create policy "owner can read" on public.tracker_state
-  for select to authenticated
-  using ((select auth.uid()) = user_id);
+create or replace function public.tracker_get(p_code text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v text := public.tracker_check(p_code);
+  r public.tracker_shared;
+begin
+  if v <> 'ok' then
+    return jsonb_build_object('ok', false, 'reason', v);
+  end if;
+  select * into r from public.tracker_shared where id;
+  return jsonb_build_object('ok', true, 'state', r.state, 'version', r.version, 'updated_at', r.updated_at);
+end;
+$$;
 
-drop policy if exists "owner can insert" on public.tracker_state;
-create policy "owner can insert" on public.tracker_state
-  for insert to authenticated
-  with check ((select auth.uid()) = user_id);
+-- Saves only if p_version is still current, so one device cannot silently overwrite another.
+create or replace function public.tracker_save(p_code text, p_state jsonb, p_version bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v text := public.tracker_check(p_code);
+  r public.tracker_shared;
+  new_version bigint;
+begin
+  if v <> 'ok' then
+    return jsonb_build_object('ok', false, 'reason', v);
+  end if;
+  update public.tracker_shared
+     set state = p_state, version = version + 1, updated_at = now()
+   where id and version = p_version
+   returning version into new_version;
+  if found then
+    return jsonb_build_object('ok', true, 'saved', true, 'version', new_version);
+  end if;
+  select * into r from public.tracker_shared where id;
+  return jsonb_build_object('ok', true, 'saved', false, 'state', r.state, 'version', r.version, 'updated_at', r.updated_at);
+end;
+$$;
 
-drop policy if exists "owner can update" on public.tracker_state;
-create policy "owner can update" on public.tracker_state
-  for update to authenticated
-  using ((select auth.uid()) = user_id)
-  with check ((select auth.uid()) = user_id);
+revoke all on function public.tracker_check(text) from public, anon, authenticated;
+revoke all on function public.tracker_get(text) from public;
+revoke all on function public.tracker_save(text, jsonb, bigint) from public;
+grant execute on function public.tracker_get(text) to anon;
+grant execute on function public.tracker_save(text, jsonb, bigint) to anon;
+
+-- Set the code: replace CHANGE_ME below, keeping the ' marks around it.
+do $$
+declare
+  v_code text := trim('CHANGE_ME');
+begin
+  if v_code = 'CHANGE_ME' or char_length(v_code) < 8 then
+    raise exception 'Replace CHANGE_ME with your own code of at least 8 characters';
+  end if;
+  insert into public.tracker_shared (id, code_hash)
+  values (true, extensions.crypt(v_code, extensions.gen_salt('bf', 10)))
+  on conflict (id) do update
+    set code_hash = excluded.code_hash, failed = 0, locked_until = null;
+end;
+$$;
