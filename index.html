@@ -477,7 +477,7 @@ function applyAccent(){html.setAttribute("data-accent",ACCENTS[S.accent]?S.accen
 const isPhone=()=>window.matchMedia("(max-width:600px)").matches;
 
 applyAccent();
-let artifactNS=null,downloadsNS=null,readOnly=false,sheetOpen=false,sheetTeam=null,sheetTrack=null,pendingDel=null;const openNotes=new Set();
+let artifactNS=null,downloadsNS=null,readOnly=false,sheetOpen=false,sheetTeam=null,sheetTrack=null,pendingDel=null,undoClear=null;const openNotes=new Set();
 const root=document.getElementById("root");
 const uid=p=>p+Math.random().toString(36).slice(2,8);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -518,7 +518,7 @@ function today(){const d=new Date();return d.getFullYear()+"/"+String(d.getMonth
 const findTeam=id=>S.teams.find(t=>t.id===id);
 function isCollapsed(t,i){if(t.id in UI.collapsed)return !!UI.collapsed[t.id];return isPhone()&&i>0}
 
-function persist(){dirty=true;S.example=false;try{localStorage.setItem(DRAFT_KEY,JSON.stringify({base:embedded.ts,state:S,dirty:true}))}catch(e){}cloudTouch()}
+function persist(){undoClear=null;dirty=true;S.example=false;try{localStorage.setItem(DRAFT_KEY,JSON.stringify({base:embedded.ts,state:S,dirty:true}))}catch(e){}cloudTouch()}
 function toast(msg){document.querySelectorAll(".toast").forEach(n=>n.remove());const t=document.createElement("div");t.className="toast";t.setAttribute("role","status");t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
 
 function actionBtns(){
@@ -587,12 +587,15 @@ function render(){
     <div class="vbar">
       <h2>تقييم الفرق</h2>
       <div class="row">
+        <button class="btn sm ghost" id="clearAll" style="color:var(--low)">${I.trash}تفريغ</button>
         <div class="seg-sw" role="group" aria-label="طريقة العرض">
           <button data-view="cards" aria-pressed="${UI.view==="cards"}">${I.cards}بطاقات</button>
           <button data-view="table" aria-pressed="${UI.view==="table"}">${I.table}جدول</button>
         </div>
       </div>
     </div>
+    ${pendingDel&&pendingDel[0]==="clear"?`<div style="margin-bottom:14px">${confirmBox()}</div>`:""}
+    ${undoClear?`<div class="confirm" role="status" style="margin-bottom:14px"><span class="txt">تم تفريغ التقييم والملاحظات.</span><button class="btn sm soft" id="undoClear">تراجع</button></div>`:""}
     ${!S.sections.length?'<div class="empty">أضف قسماً واحداً على الأقل من «الفرق والأقسام» لبدء التقييم.</div>':UI.view==="table"?matrix():`<section class="tc-grid">${S.teams.map(trackCard).join("")}</section>`}
   `}</main>
   <nav class="bottom-bar" aria-label="إجراءات">${actionBtns()}</nav>
@@ -617,7 +620,9 @@ function sheet(){
   </div>`;
 }
 function confirmBox(){
-  const [kind,id]=pendingDel;const name=kind==="sec"?S.sections.find(s=>s.id===id)?.name:findTeam(id)?.name;
+  const [kind,id]=pendingDel;
+  if(kind==="clear")return `<div class="confirm" role="alert"><span class="txt">تفريغ الحالات والملاحظات ونسب الإنجاز من كل الفرق؟ تبقى أسماء الفرق والأعضاء والأقسام.</span><button class="btn sm danger" id="doClear">تفريغ</button><button class="btn sm ghost" id="cancelDel">إلغاء</button></div>`;
+  const name=kind==="sec"?S.sections.find(s=>s.id===id)?.name:findTeam(id)?.name;
   const txt=kind==="sec"?`حذف قسم «${esc(name)}» وتقييماته من كل الفرق؟`:`حذف «${esc(name)}» وكل تقييماته؟`;
   return `<div class="confirm" role="alert"><span class="txt">${txt}</span><button class="btn sm danger" id="doDel">حذف</button><button class="btn sm ghost" id="cancelDel">إلغاء</button></div>`;
 }
@@ -715,7 +720,7 @@ function matrix(){
 }
 function updateSaveUI(){
   const st=document.getElementById("saveState"),tx=document.getElementById("saveTxt");
-  if(st&&cloud.code){st.classList.toggle("dirty",cloud.pending||!!cloud.conflict);tx.textContent=cloud.conflict?"يوجد تعارض بين نسختين":cloud.offline?"غير متصل، ستُرفع التعديلات لاحقاً":cloud.pending||cloud.pushing?"جارٍ الحفظ…":"محفوظ في السحابة"}
+  if(st&&cloud.code){st.classList.toggle("dirty",cloud.pending||!!cloud.conflict);tx.textContent=cloud.conflict?"يوجد تعارض بين نسختين":cloud.offline?(cloud.fail==="setup"?"قاعدة البيانات لم تُجهَّز بعد":cloud.fail==="server"?"الخادم لم يقبل الحفظ، ستُعاد المحاولة":"غير متصل، ستُرفع التعديلات لاحقاً"):cloud.pending||cloud.pushing?"جارٍ الحفظ…":"محفوظ في السحابة"}
   else if(st&&cloudEnabled){st.classList.add("dirty");tx.textContent="محفوظ في هذا الجهاز فقط"}
   else if(st){st.classList.toggle("dirty",dirty);tx.textContent=dirty?(artifactNS&&!readOnly?"تغييرات غير محفوظة":"محفوظ في هذا الجهاز"):"كل شيء محفوظ"}
   document.querySelectorAll('[data-act="save"]').forEach(b=>b.disabled=!dirty);
@@ -752,6 +757,9 @@ root.addEventListener("click",e=>{
   switch(b.id){
     case "doDel":{const[k,id]=pendingDel;if(k==="sec"){S.sections=S.sections.filter(s=>s.id!==id);S.teams.forEach(t=>delete t.r[id])}else{S.teams=S.teams.filter(t=>t.id!==id);if(sheetTeam===id)sheetTeam=null}pendingDel=null;persist();rerender();toast("تم الحذف");return}
     case "cancelDel":pendingDel=null;rerender();return;
+    case "clearAll":pendingDel=["clear"];rerender();return;
+    case "doClear":{const snap=JSON.stringify(S.teams);S.teams.forEach(t=>{t.note="";t.pct="";Object.values(t.r||{}).forEach(c=>{c.p=0;c.s=0;c.n=""})});pendingDel=null;openNotes.clear();persist();undoClear=snap;rerender();return}
+    case "undoClear":{if(undoClear){S.teams=JSON.parse(undoClear);persist();toast("تمت إعادة البيانات")}rerender();return}
     case "toggleAll":{const all=S.teams.every((t,i)=>isCollapsed(t,i));S.teams.forEach(t=>UI.collapsed[t.id]=!all);saveUI();rerender();return}
     case "cntDec":case "cntInc":{const i=document.getElementById("teamCount");i.value=Math.max(1,Math.min(60,(+i.value||1)+(b.id==="cntInc"?1:-1)));return}
     case "addSec":addSection();return;
@@ -927,9 +935,20 @@ const embeddedSrc=document.getElementById("state").textContent;
 
 async function rpc(fn,args){
   const body=JSON.stringify(args);
-  const r=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{method:"POST",headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},body,keepalive:body.length<60000});
-  if(!r.ok)throw new Error("rpc "+r.status);
+  let r;
+  try{r=await fetch(SUPABASE_URL+"/rest/v1/rpc/"+fn,{method:"POST",headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},body,keepalive:body.length<60000})}
+  catch(e){const x=new Error("network");x.kind="network";throw x}
+  if(!r.ok){
+    /* The server answered, so the internet works. PGRST202 = the functions from the setup file are not there. */
+    let c="";try{c=(await r.json()).code||""}catch(e){}
+    const x=new Error("rpc "+r.status);x.kind=c==="PGRST202"?"setup":"server";x.status=r.status;throw x;
+  }
   return r.json();
+}
+function cloudErrorText(e){
+  if(e&&e.kind==="setup")return "الإنترنت يعمل، لكن قاعدة البيانات لم تُجهَّز بعد. نفّذ ملف الإعداد في Supabase ثم حاول مرة أخرى.";
+  if(e&&e.kind==="server")return "الخادم لم يقبل الطلب (رمز "+e.status+"). حاول مرة أخرى بعد قليل.";
+  return navigator.onLine===false?"لا يوجد اتصال بالإنترنت. تحقق من الاتصال وحاول مرة أخرى.":"تعذّر الوصول إلى الخادم. تحقق من الإنترنت وحاول مرة أخرى.";
 }
 function readCloudCache(){try{return JSON.parse(localStorage.getItem(CLOUD_KEY)||"null")}catch(e){return null}}
 function writeCloudCache(){if(!cloud.code)return;try{localStorage.setItem(CLOUD_KEY,JSON.stringify({version:cloud.version,pending:cloud.pending,state:S}))}catch(e){}}
@@ -944,11 +963,11 @@ function cloudTouch(){
   cloud.pending=true;writeCloudCache();
   clearTimeout(cloud.timer);cloud.timer=setTimeout(cloudPush,1200);
 }
-function cloudRetryLater(){cloud.offline=true;clearTimeout(cloud.retry);cloud.retry=setTimeout(cloudResume,20000)}
+function cloudRetryLater(e){cloud.offline=true;cloud.fail=e&&e.kind||"network";clearTimeout(cloud.retry);cloud.retry=setTimeout(cloudResume,20000)}
 function cloudResume(){if(!cloud.code)return;if(cloud.pending&&cloud.synced)cloudPush();else cloudSync()}
 function adoptRemote(row){
   const changed=!sameData(S,row.state);
-  S=normalizeState(row.state);cloud.version=row.version;cloud.pending=false;cloud.conflict=null;cloud.synced=true;dirty=false;
+  undoClear=null;S=normalizeState(row.state);cloud.version=row.version;cloud.pending=false;cloud.conflict=null;cloud.synced=true;dirty=false;
   writeDraft();writeCloudCache();applyAccent();
   if(changed)rerender();else updateSaveUI();
 }
@@ -983,7 +1002,7 @@ async function cloudSync(){
   if(!cloud.code||cloud.conflict)return;
   const code=cloud.code;
   let res;
-  try{res=await rpc("tracker_get",{p_code:code})}catch(e){cloudRetryLater();updateSaveUI();return}
+  try{res=await rpc("tracker_get",{p_code:code})}catch(e){cloudRetryLater(e);updateSaveUI();return}
   if(cloud.code!==code)return;
   if(!res.ok){cloudRejected(res.reason);return}
   cloudApply(res);
@@ -1008,7 +1027,7 @@ async function cloudPush(){
     cloud.pending=JSON.stringify(S)!==snap;
     if(!cloud.pending)dirty=false;
     writeDraft();writeCloudCache();
-  }catch(e){cloudRetryLater()}
+  }catch(e){cloudRetryLater(e)}
   finally{
     cloud.pushing=false;updateSaveUI();
     if(cloud.again&&cloud.pending&&!cloud.conflict&&!cloud.offline)cloudPush();
@@ -1041,7 +1060,7 @@ async function cloudSignIn(form){
     cloud.code=code;cloud.pending=false;cloud.version=null;cloud.synced=false;
     try{localStorage.setItem(CODE_KEY,code)}catch(e){}
     loginOpen=false;rerender();cloudApply(res);
-  }catch(e){err.textContent="تعذّر الاتصال. تحقق من الإنترنت وحاول مرة أخرى.";btn.disabled=false}
+  }catch(e){err.textContent=cloudErrorText(e);btn.disabled=false}
 }
 async function cloudSignOut(){
   if(cloud.pending)await cloudPush();
@@ -1050,7 +1069,7 @@ async function cloudSignOut(){
   cloud.code=null;cloud.version=null;cloud.synced=false;cloud.offline=false;
   /* Leave no team data behind on this device. */
   try{localStorage.removeItem(CODE_KEY);localStorage.removeItem(CLOUD_KEY);localStorage.removeItem(DRAFT_KEY)}catch(e){}
-  S=normalizeState(JSON.parse(embeddedSrc));dirty=false;applyAccent();rerender();
+  undoClear=null;S=normalizeState(JSON.parse(embeddedSrc));dirty=false;applyAccent();rerender();
 }
 if(cloudEnabled){
   try{cloud.code=localStorage.getItem(CODE_KEY)}catch(e){}

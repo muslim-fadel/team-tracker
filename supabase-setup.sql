@@ -1,7 +1,10 @@
 -- Run once in Supabase: SQL Editor > New query > Run.
--- BEFORE running: replace CHANGE_ME at the bottom of this file with your own code (8+ characters, no ' character).
--- Do not save your real code back into this file: this repository is public.
--- To change the code later, run the last block again with a new code. The data is kept.
+-- Do not save your real code back into this file.
+-- Safe to run again: to change the code, run the whole file with a new code. The data is kept.
+
+-- ===== اكتب رمزك بدل CHANGE_ME في السطر التالي فقط (8 أحرف على الأقل، بدون علامة ') ثم اضغط Run =====
+select set_config('tracker.code', 'CHANGE_ME', false);
+-- ===== لا تغيّر شيئاً بعد هذا السطر. عند النجاح تظهر في النتائج عبارة: تم الإعداد بنجاح =====
 
 create extension if not exists pgcrypto with schema extensions;
 
@@ -101,13 +104,13 @@ revoke all on function public.tracker_save(text, jsonb, bigint) from public;
 grant execute on function public.tracker_get(text) to anon;
 grant execute on function public.tracker_save(text, jsonb, bigint) to anon;
 
--- Set the code: replace CHANGE_ME below, keeping the ' marks around it.
+-- Stores only a hash of the code set at the top of this file.
 do $$
 declare
-  v_code text := trim('CHANGE_ME');
+  v_code text := trim(current_setting('tracker.code'));
 begin
-  if v_code = 'CHANGE_ME' or char_length(v_code) < 8 then
-    raise exception 'Replace CHANGE_ME with your own code of at least 8 characters';
+  if v_code = 'CHANGE' || '_ME' or char_length(v_code) < 8 then
+    raise exception 'اكتب رمزك بدل CHANGE_ME في أعلى الملف، 8 أحرف على الأقل';
   end if;
   insert into public.tracker_shared (id, code_hash)
   values (true, extensions.crypt(v_code, extensions.gen_salt('bf', 10)))
@@ -115,3 +118,8 @@ begin
     set code_hash = excluded.code_hash, failed = 0, locked_until = null;
 end;
 $$;
+
+-- Clear the code from this session, then make the new functions visible to the API right away.
+select set_config('tracker.code', '', false);
+notify pgrst, 'reload schema';
+select 'تم الإعداد بنجاح' as result;
