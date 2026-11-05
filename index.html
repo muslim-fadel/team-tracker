@@ -419,6 +419,24 @@ table.mx{border-collapse:separate;border-spacing:0;width:100%;font-variant-numer
 #report .mcell{display:flex;align-items:center;gap:8px;background:#F7F8FB;border:1px solid #EEF0F6;border-radius:10px;padding:7px 10px;font-weight:500;min-width:0}
 #report .mnum{width:24px;height:24px;line-height:24px;text-align:center;border-radius:7px;background:var(--rs);color:var(--rt);font-weight:700;font-size:11.5px;flex:none}
 #report .foot{display:flex;justify-content:space-between;color:#9AA2B4;font-size:10.5px;border-top:1px solid #EEF0F6;padding:8px 2px 0}
+
+/* Native print (Safari / iPhone) */
+@media print{
+  @page{size:A4;margin:12mm}
+  html,body{background:#FFFFFF!important;overflow:visible!important}
+  #root,.toast{display:none!important}
+  #report{position:static!important;left:auto!important;width:auto!important}
+  #report,#report *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #report>div{break-inside:avoid;page-break-inside:avoid}
+}
+
+/* Cloud sync */
+.login-form{display:flex;flex-direction:column;gap:12px}
+.login-form input{width:100%;min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:16px;direction:ltr;text-align:left}
+.login-err{color:var(--low);font-size:.84rem;min-height:1.2em}
+.cloud-acct{font-size:.9rem;color:var(--muted);overflow-wrap:anywhere}
+.conflict{flex-wrap:wrap;margin-bottom:14px}
+.conflict span{flex:1 1 220px}
 </style>
 
 <div id="root"></div>
@@ -428,6 +446,7 @@ table.mx{border-collapse:separate;border-spacing:0;width:100%;font-variant-numer
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script id="app-js">
 (function(){
 const html=document.documentElement;html.dir="rtl";html.lang="ar";
@@ -488,6 +507,7 @@ const I={
   palette:'<svg class="i" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.9 1.2-1.8-.5-1-.1-2.2 1.1-2.2H17a4 4 0 0 0 4-4c0-5-4-10-9-10z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/></svg>',
   check:'<svg class="i" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>',
   users:'<svg class="i" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/></svg>',
+  cloud:'<svg class="i" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 10.5a3.75 3.75 0 0 1-.5 7.5z"/></svg>',
   logo:'<svg viewBox="0 0 24 24"><path d="M5 19V12M12 19V5M19 19v-9"/></svg>'
 };
 function cell(t,sid){if(!t.r[sid])t.r[sid]={p:0,s:0,n:""};return t.r[sid]}
@@ -498,12 +518,12 @@ function today(){const d=new Date();return d.getFullYear()+"/"+String(d.getMonth
 const findTeam=id=>S.teams.find(t=>t.id===id);
 function isCollapsed(t,i){if(t.id in UI.collapsed)return !!UI.collapsed[t.id];return isPhone()&&i>0}
 
-function persist(){dirty=true;S.example=false;try{localStorage.setItem(DRAFT_KEY,JSON.stringify({base:embedded.ts,state:S,dirty:true}))}catch(e){}}
+function persist(){dirty=true;S.example=false;try{localStorage.setItem(DRAFT_KEY,JSON.stringify({base:embedded.ts,state:S,dirty:true}))}catch(e){}cloudTouch()}
 function toast(msg){document.querySelectorAll(".toast").forEach(n=>n.remove());const t=document.createElement("div");t.className="toast";t.setAttribute("role","status");t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
 
 function actionBtns(){
   const canSave=artifactNS&&!readOnly;
-  return `${canSave?`<button class="btn soft" data-act="save" ${dirty?"":"disabled"}>${I.save}حفظ</button>`:""}<button class="btn primary" data-act="pdf" ${downloadsNS?"":"disabled"}>${I.pdf}${UI.page==="teams"?"تصدير الفرق":"تصدير المتابعة"}</button>`;
+  return `${canSave?`<button class="btn soft" data-act="save" ${dirty?"":"disabled"}>${I.save}حفظ</button>`:""}<button class="btn primary" data-act="pdf" ${downloadsNS||useNativePrint?"":"disabled"}>${I.pdf}${useNativePrint?"طباعة":"تصدير"} ${UI.page==="teams"?"الفرق":"المتابعة"}</button>`;
 }
 function render(){
   const totAll=S.teams.length*S.sections.length,totDone=S.teams.reduce((a,t)=>a+S.sections.filter(s=>cell(t,s.id).p>=100).length,0);
@@ -519,6 +539,7 @@ function render(){
       <span class="save-state ${dirty?"dirty":""}" id="saveState"><span class="dot"></span><span id="saveTxt"></span></span>
     </div>
     <div class="tools">
+      ${cloudEnabled?`<button class="icon-btn" id="cloudBtn" aria-haspopup="dialog" aria-label="الحفظ السحابي">${I.cloud}</button>`:""}
       <button class="cust-btn" id="custBtn" aria-haspopup="dialog"><span class="sw"></span>تخصيص</button>
       <div class="tools desk-only">${actionBtns()}</div>
     </div>
@@ -528,7 +549,7 @@ function render(){
     <button data-page="teams" aria-current="${UI.page==="teams"?"page":"false"}">${I.users}الفرق<span class="cnt">${S.teams.length}</span></button>
   </nav></header>
 
-  <main class="wrap">${UI.page==="teams"?teamsPage():`
+  <main class="wrap">${conflictBanner()}${UI.page==="teams"?teamsPage():`
     ${S.example?`<div class="example">${I.info}<span>هذه بيانات تجريبية، عدّل الأسماء والملاحظات لتبدأ.</span></div>`:""}
     <section class="stats">
       <div class="stat hero"><div><span class="k">الأقسام المنجزة</span><div class="v">${totDone} <span style="font-size:.9rem;font-weight:500;color:var(--muted)">من ${totAll}</span></div></div></div>
@@ -575,8 +596,8 @@ function render(){
     ${!S.sections.length?'<div class="empty">أضف قسماً واحداً على الأقل من «الفرق والأقسام» لبدء التقييم.</div>':UI.view==="table"?matrix():`<section class="tc-grid">${S.teams.map(trackCard).join("")}</section>`}
   `}</main>
   <nav class="bottom-bar" aria-label="إجراءات">${actionBtns()}</nav>
-  ${sheetOpen?sheet():""}${sheetTeam?teamSheet():""}${sheetTrack?trackSheet():""}`;
-  document.body.style.overflow=(sheetOpen||sheetTeam||sheetTrack)?"hidden":"";
+  ${sheetOpen?sheet():""}${sheetTeam?teamSheet():""}${sheetTrack?trackSheet():""}${loginOpen?loginSheet():""}`;
+  document.body.style.overflow=(sheetOpen||sheetTeam||sheetTrack||loginOpen)?"hidden":"";
   updateSaveUI();
 }
 function sheet(){
@@ -692,7 +713,9 @@ function matrix(){
 }
 function updateSaveUI(){
   const st=document.getElementById("saveState"),tx=document.getElementById("saveTxt");
-  if(st){st.classList.toggle("dirty",dirty);tx.textContent=dirty?(artifactNS&&!readOnly?"تغييرات غير محفوظة":"محفوظ في هذا الجهاز"):"كل شيء محفوظ"}
+  if(st&&cloud.user){st.classList.toggle("dirty",cloud.pending||!!cloud.conflict);tx.textContent=cloud.conflict?"يوجد تعارض بين نسختين":cloud.offline?"غير متصل، ستُرفع التعديلات لاحقاً":cloud.pending||cloud.pushing?"جارٍ الحفظ…":"محفوظ في السحابة"}
+  else if(st&&cloudEnabled){st.classList.add("dirty");tx.textContent="محفوظ في هذا الجهاز فقط"}
+  else if(st){st.classList.toggle("dirty",dirty);tx.textContent=dirty?(artifactNS&&!readOnly?"تغييرات غير محفوظة":"محفوظ في هذا الجهاز"):"كل شيء محفوظ"}
   document.querySelectorAll('[data-act="save"]').forEach(b=>b.disabled=!dirty);
 }
 function rerender(){const y=window.scrollY,a=document.activeElement&&document.activeElement.id,sh=document.querySelector(".sheet"),sy=sh?sh.scrollTop:0;render();window.scrollTo(0,y);if(sh){document.querySelectorAll(".sheet,.backdrop").forEach(e=>e.classList.add("noanim"));const n=document.querySelector(".sheet");if(n)n.scrollTop=sy}if(a){const el=document.getElementById(a);if(el&&el.tagName==="INPUT")el.focus()}}
@@ -703,6 +726,10 @@ root.addEventListener("click",e=>{
   if(!b){const h=e.target.closest("[data-head]");if(h&&!e.target.closest("input")){const t=h.dataset.head,i=S.teams.findIndex(x=>x.id===t);UI.collapsed[t]=!isCollapsed(S.teams[i],i);saveUI();rerender()}return}
   const d=b.dataset;
   if(b.id==="custBtn"){sheetOpen=true;rerender();const f=document.querySelector('.swatches [aria-checked="true"]');if(f)f.focus();return}
+  if(b.id==="cloudBtn"){loginOpen=true;rerender();return}
+  if(b.id==="cloudOut"){cloudSignOut();return}
+  if(b.id==="useRemote"){cloudUseRemote();return}
+  if(b.id==="keepLocal"){cloudKeepLocal();return}
   if(d.themeSet){UI.theme=d.themeSet;saveUI();applyTheme();rerender();return}
   if(d.accentSet){S.accent=d.accentSet;applyAccent();persist();rerender();return}
   if(d.act==="save"){save();return}
@@ -732,7 +759,7 @@ root.addEventListener("click",e=>{
 });
 root.addEventListener("toggle",e=>{if(e.target.id==="setup"){UI.setupOpen=e.target.open;saveUI()}},true);
 root.addEventListener("keydown",e=>{
-  if(e.key==="Escape"&&(sheetOpen||sheetTeam||sheetTrack))closeSheets();
+  if(e.key==="Escape"&&(sheetOpen||sheetTeam||sheetTrack||loginOpen))closeSheets();
   if(e.key==="Enter"&&e.target.id==="newSec")addSection();
   if(e.key==="Enter"&&e.target.dataset.addin){e.preventDefault();addMember(e.target.dataset.addin)}
   if(e.key==="Enter"&&e.target.id==="teamCount")applyCount();
@@ -750,7 +777,8 @@ root.addEventListener("input",e=>{
   persist();updateSaveUI();
 });
 root.addEventListener("change",e=>{if(e.target.dataset.sec||e.target.dataset.tname)rerender()});
-function closeSheets(){const a=sheetTeam,b=sheetTrack;sheetOpen=false;sheetTeam=null;sheetTrack=null;pendingDel=null;rerender();const f=a?document.querySelector('[data-openteam="'+a+'"]'):b?document.querySelector('[data-opentrack="'+b+'"]'):document.getElementById("custBtn");if(f)f.focus()}
+root.addEventListener("submit",e=>{if(e.target.id==="loginForm"){e.preventDefault();cloudSignIn(e.target)}});
+function closeSheets(){const a=sheetTeam,b=sheetTrack;sheetOpen=false;sheetTeam=null;sheetTrack=null;loginOpen=false;pendingDel=null;rerender();const f=a?document.querySelector('[data-openteam="'+a+'"]'):b?document.querySelector('[data-opentrack="'+b+'"]'):document.getElementById("custBtn");if(f)f.focus()}
 function addMember(tid){const el=document.getElementById("am-"+tid);const v=(el.value||"").trim();if(!v){el.focus();return}const t=findTeam(tid);(t.members=t.members||[]).push(v);persist();rerender();const n=document.getElementById("am-"+tid);if(n)n.focus()}
 function addSection(){const i=document.getElementById("newSec");const name=i.value.trim();if(!name){i.focus();return}const id=uid("s");S.sections.push({id,name});S.teams.forEach(t=>t.r[id]={p:0,s:0,n:""});persist();rerender();toast("أُضيف قسم «"+name+"»")}
 function applyCount(){let n=parseInt(document.getElementById("teamCount").value,10);if(!(n>=1))n=1;if(n>60)n=60;
@@ -772,6 +800,7 @@ function buildDoc(state){
    +'<script type="application/json" id="state">'+json+'<\/script>\n'
    +'<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>\n'
    +'<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script>\n'
+   +'<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"><\/script>\n'
    +'<script id="app-js">'+js+'<\/script></body></html>';
 }
 async function save(){
@@ -838,7 +867,10 @@ function buildTeamsReport(){
   const foot=document.createElement("div");foot.innerHTML=`<div class="foot"><span>الفرق · ${esc(S.title)}</span><span>${N(today())}</span></div>`;
   return {rep,foot};
 }
+function buildPrintReport(){const {rep,foot}=UI.page==="teams"?buildTeamsReport():buildReport();rep.appendChild(foot)}
+window.addEventListener("beforeprint",buildPrintReport);
 async function exportPdf(btn){
+  if(useNativePrint){buildPrintReport();window.print();toast("لحفظه PDF اختر ذلك من شاشة الطباعة.");return}
   if(!downloadsNS){toast("تنزيل الملفات غير متاح في هذا العرض.");return}
   if(!window.html2canvas||!window.jspdf){toast("لم تُحمَّل أدوات PDF. أعد فتح الصفحة.");return}
   const btns=document.querySelectorAll('[data-act="pdf"]');btns.forEach(b=>{b.disabled=true});const old=btn.innerHTML;btn.textContent="جارٍ التجهيز…";
@@ -872,6 +904,158 @@ async function exportPdf(btn){
     else if(c==="unavailable"||c==="not_granted")toast("تنزيل الملفات غير متاح في هذا العرض.");
     else toast("تعذّر إنشاء الملف. حاول مرة أخرى.");
   }finally{btns.forEach(b=>{b.disabled=false});btn.innerHTML=old}
+}
+
+/* ---------- print method: WebKit breaks Arabic in html2canvas, so it uses the browser's own print ---------- */
+const useNativePrint=(()=>{
+  const q=new URLSearchParams(location.search).get("print");
+  if(q==="native")return true;if(q==="canvas")return false;
+  const ua=navigator.userAgent;
+  const ios=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+  return ios||(/Safari\//.test(ua)&&!/Chrome|Chromium|Edg|OPR|Android/.test(ua));
+})();
+if(useNativePrint&&document.fonts){['500 13px "IBM Plex Sans Arabic"','600 13px "IBM Plex Sans Arabic"','700 13px "IBM Plex Sans Arabic"','700 17px "Readex Pro"'].forEach(f=>{document.fonts.load(f,"ع").catch(()=>{})})}
+
+/* ---------- Supabase sync. Empty URL/key = local-only. The key must be the public anon/publishable one, never service_role. ---------- */
+const SUPABASE_URL="",SUPABASE_KEY="";
+const CLOUD_KEY="team-tracker-cloud",CLOUD_TABLE="tracker_state";
+const cloudEnabled=!!(SUPABASE_URL&&SUPABASE_KEY);
+const sb=cloudEnabled&&window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
+const cloud={user:null,version:null,synced:false,pending:false,pushing:false,again:false,offline:false,conflict:null,timer:null,retry:null};
+let loginOpen=false;
+const embeddedSrc=document.getElementById("state").textContent;
+
+function readCloudCache(){try{return JSON.parse(localStorage.getItem(CLOUD_KEY)||"null")}catch(e){return null}}
+function writeCloudCache(){if(!cloud.user)return;try{localStorage.setItem(CLOUD_KEY,JSON.stringify({uid:cloud.user.id,version:cloud.version,pending:cloud.pending,state:S}))}catch(e){}}
+function writeDraft(){try{localStorage.setItem(DRAFT_KEY,JSON.stringify({base:embedded.ts,state:S,dirty}))}catch(e){}}
+function validState(s){return !!s&&Array.isArray(s.teams)&&Array.isArray(s.sections)}
+function normalizeState(s){s.teams.forEach(t=>{for(const k in t.r){const c=t.r[k];c.p=c.p>=100?100:c.p>0?50:0}});return s}
+/* Sorted keys: Postgres jsonb does not keep key order. */
+const canon=v=>JSON.stringify(v,(k,x)=>x&&typeof x==="object"&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,n)=>(o[n]=x[n],o),{}):x);
+function sameData(a,b){return canon(a)===canon(b)}
+function cloudTouch(){
+  if(!cloud.user)return;
+  cloud.pending=true;writeCloudCache();
+  clearTimeout(cloud.timer);cloud.timer=setTimeout(cloudPush,1200);
+}
+function cloudRetryLater(){cloud.offline=true;clearTimeout(cloud.retry);cloud.retry=setTimeout(cloudResume,20000)}
+function cloudResume(){if(!cloud.user)return;if(cloud.pending&&cloud.synced)cloudPush();else cloudSync()}
+function adoptRemote(row){
+  const changed=!sameData(S,row.state);
+  S=normalizeState(row.state);cloud.version=row.version;cloud.pending=false;cloud.conflict=null;cloud.synced=true;dirty=false;
+  writeDraft();writeCloudCache();applyAccent();
+  if(changed)rerender();else updateSaveUI();
+}
+function startConflict(row){cloud.conflict=row;cloud.synced=true;rerender()}
+async function cloudSync(){
+  if(!sb||!cloud.user||cloud.conflict)return;
+  const uid=cloud.user.id;
+  const {data,error}=await sb.from(CLOUD_TABLE).select("state,version,updated_at").eq("user_id",uid).maybeSingle();
+  if(!cloud.user||cloud.user.id!==uid)return;
+  if(error){cloudRetryLater();updateSaveUI();return}
+  cloud.offline=false;clearTimeout(cloud.retry);
+  const c=readCloudCache(),mine=c&&c.uid===uid&&validState(c.state)?c:null;
+  if(data&&!validState(data.state)){toast("بيانات السحابة غير صالحة، لم تُستبدل بياناتك.");return}
+  /* dirty covers edits typed while signed out; cloud.pending covers edits typed during this fetch. */
+  if(!cloud.pending&&!dirty&&mine&&mine.pending){S=normalizeState(mine.state);applyAccent()}
+  const pending=cloud.pending||dirty||!!(mine&&mine.pending);
+  if(!data){cloud.version=null;cloud.pending=true;cloud.synced=true;writeCloudCache();rerender();cloudPush();return}
+  if(mine){
+    if(!pending){adoptRemote(data);return}
+    if(data.version===mine.version){cloud.version=data.version;cloud.pending=true;cloud.synced=true;rerender();cloudPush();return}
+    cloud.pending=true;startConflict(data);return;
+  }
+  /* First sign-in on this device: never silently drop data typed here before syncing. */
+  if(pending&&!sameData(S.teams,data.state.teams)){cloud.pending=true;startConflict(data);return}
+  adoptRemote(data);
+}
+async function cloudPush(){
+  if(!sb||!cloud.user||cloud.conflict||!cloud.pending||!cloud.synced)return;
+  if(cloud.pushing){cloud.again=true;return}
+  clearTimeout(cloud.timer);
+  cloud.pushing=true;cloud.again=false;updateSaveUI();
+  const uid=cloud.user.id,snap=JSON.stringify(S),state=JSON.parse(snap);
+  try{
+    const res=cloud.version==null
+      ?await sb.from(CLOUD_TABLE).insert({user_id:uid,state,version:1}).select("version")
+      :await sb.from(CLOUD_TABLE).update({state,version:cloud.version+1,updated_at:new Date().toISOString()}).eq("user_id",uid).eq("version",cloud.version).select("version");
+    if(res.error&&res.error.code!=="23505"){cloudRetryLater();return}
+    const row=res.data&&res.data[0];
+    if(!row){
+      /* Another device saved first: fetch its copy and let the user choose. */
+      const cur=await sb.from(CLOUD_TABLE).select("state,version,updated_at").eq("user_id",uid).maybeSingle();
+      if(cur.error){cloudRetryLater();return}
+      if(!cur.data){cloud.version=null;cloud.again=true;return}
+      if(!validState(cur.data.state)){cloud.version=cur.data.version;cloud.again=true;return}
+      cloud.offline=false;startConflict(cur.data);return;
+    }
+    cloud.offline=false;clearTimeout(cloud.retry);
+    cloud.version=row.version;
+    cloud.pending=JSON.stringify(S)!==snap;
+    if(!cloud.pending)dirty=false;
+    writeDraft();writeCloudCache();
+  }catch(e){cloudRetryLater()}
+  finally{
+    cloud.pushing=false;updateSaveUI();
+    if(cloud.again&&cloud.pending&&!cloud.conflict&&!cloud.offline)cloudPush();
+  }
+}
+function cloudUseRemote(){const r=cloud.conflict;if(!r)return;adoptRemote(r);rerender();toast("تم استخدام نسخة السحابة")}
+function cloudKeepLocal(){const r=cloud.conflict;if(!r)return;cloud.version=r.version;cloud.conflict=null;cloud.pending=true;rerender();cloudPush()}
+function conflictBanner(){
+  if(!cloud.conflict)return "";
+  const d=cloud.conflict.updated_at?new Date(cloud.conflict.updated_at):null;
+  const when=d&&!isNaN(d)?` (آخر حفظ ${d.toLocaleString("ar")})`:"";
+  return `<div class="example conflict" role="alert">${I.info}<span>توجد نسخة مختلفة في السحابة${esc(when)}. أي نسخة تريد الإبقاء عليها؟ النسخة الأخرى ستُستبدل.</span><button class="btn sm soft" id="useRemote">نسخة السحابة</button><button class="btn sm ghost" id="keepLocal">نسخة هذا الجهاز</button></div>`;
+}
+function loginSheet(){
+  const head=`<div class="backdrop" data-close="1"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="loginTitle"><div class="grab"></div><div class="sheet-head"><h3 id="loginTitle">الحفظ السحابي</h3><button class="icon-btn" data-close="1" aria-label="إغلاق">${I.x}</button></div>`;
+  if(cloud.user)return head+`<div class="cloud-acct">مسجّل الدخول باسم: <bdi>${esc(cloud.user.email||"")}</bdi></div><button class="btn ghost" id="cloudOut">تسجيل الخروج</button><button class="btn primary" data-close="1">تم</button></div>`;
+  if(!sb)return head+`<div class="hint">تعذّر تحميل أداة الحفظ السحابي. تحقق من الاتصال ثم أعد فتح الصفحة.</div><button class="btn primary" data-close="1">تم</button></div>`;
+  return head+`<div class="hint">سجّل الدخول لتظهر بياناتك نفسها على كل أجهزتك.</div>
+    <form class="login-form" id="loginForm">
+      <div><label class="field-label" for="loginEmail">البريد الإلكتروني</label><input id="loginEmail" name="email" type="email" autocomplete="username" autocapitalize="none" required></div>
+      <div><label class="field-label" for="loginPass">كلمة المرور</label><input id="loginPass" name="password" type="password" autocomplete="current-password" required></div>
+      <div class="login-err" id="loginErr" role="alert"></div>
+      <button class="btn primary" type="submit" id="loginBtn">تسجيل الدخول</button>
+    </form></div>`;
+}
+async function cloudSignIn(form){
+  const err=document.getElementById("loginErr"),btn=document.getElementById("loginBtn");
+  err.textContent="";btn.disabled=true;
+  try{
+    const {error}=await sb.auth.signInWithPassword({email:form.elements.email.value.trim(),password:form.elements.password.value});
+    if(error){err.textContent=error.status===400?"البريد أو كلمة المرور غير صحيحة.":"تعذّر تسجيل الدخول. تحقق من الاتصال وحاول مرة أخرى.";btn.disabled=false}
+  }catch(e){err.textContent="تعذّر تسجيل الدخول. تحقق من الاتصال وحاول مرة أخرى.";btn.disabled=false}
+}
+async function cloudSignOut(){
+  if(cloud.pending)await cloudPush();
+  if(cloud.pending){toast("لم تُرفع كل التعديلات بعد، لذلك لم يتم تسجيل الخروج.");return}
+  try{await sb.auth.signOut({scope:"local"})}catch(e){}
+  cloud.user=null;cloud.version=null;cloud.synced=false;cloud.offline=false;clearTimeout(cloud.retry);clearTimeout(cloud.timer);
+  /* Leave no team data behind on this device. */
+  try{localStorage.removeItem(CLOUD_KEY);localStorage.removeItem(DRAFT_KEY)}catch(e){}
+  S=normalizeState(JSON.parse(embeddedSrc));dirty=false;applyAccent();rerender();
+}
+function onSession(session,initial){
+  const u=session&&session.user||null;
+  if(!u&&initial){loginOpen=true;rerender();return}
+  if((u&&u.id)===(cloud.user&&cloud.user.id)){cloud.user=u||cloud.user;return}
+  cloud.user=u;cloud.version=null;cloud.synced=false;cloud.conflict=null;cloud.offline=false;
+  if(u){cloud.pending=false;loginOpen=false;rerender();cloudSync()}else rerender();
+}
+if(sb){
+  /* Deferred: supabase-js deadlocks if its client is called inside this callback. */
+  sb.auth.onAuthStateChange((ev,session)=>{setTimeout(()=>onSession(session,ev==="INITIAL_SESSION"),0)});
+  document.addEventListener("visibilitychange",()=>{
+    if(!cloud.user)return;
+    if(document.visibilityState==="hidden"){if(cloud.pending)cloudPush();return}
+    if(cloud.pending){cloudResume();return}
+    const a=document.activeElement;if(a&&(a.tagName==="INPUT"||a.tagName==="TEXTAREA"))return;
+    cloudSync();
+  });
+  window.addEventListener("online",cloudResume);
+  window.addEventListener("pagehide",()=>{if(cloud.user&&cloud.pending)cloudPush()});
 }
 
 render();
