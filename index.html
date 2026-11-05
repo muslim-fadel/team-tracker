@@ -917,7 +917,7 @@ const useNativePrint=(()=>{
 if(useNativePrint&&document.fonts){['500 13px "IBM Plex Sans Arabic"','600 13px "IBM Plex Sans Arabic"','700 13px "IBM Plex Sans Arabic"','700 17px "Readex Pro"'].forEach(f=>{document.fonts.load(f,"ع").catch(()=>{})})}
 
 /* ---------- Supabase sync. Empty URL/key = local-only. The key must be the public anon/publishable one, never service_role. ---------- */
-const SUPABASE_URL="",SUPABASE_KEY="";
+const SUPABASE_URL="https://bvgjalodboilkqusuegu.supabase.co",SUPABASE_KEY="sb_publishable_-1uWRNFs23fMgWYZT2eG-g_xE0b2HVT";
 const CLOUD_KEY="team-tracker-cloud",CLOUD_TABLE="tracker_state";
 const cloudEnabled=!!(SUPABASE_URL&&SUPABASE_KEY);
 const sb=cloudEnabled&&window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
