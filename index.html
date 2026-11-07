@@ -523,7 +523,7 @@ function toast(msg){document.querySelectorAll(".toast").forEach(n=>n.remove());c
 
 function actionBtns(){
   const canSave=artifactNS&&!readOnly;
-  return `${canSave?`<button class="btn soft" data-act="save" ${dirty?"":"disabled"}>${I.save}حفظ</button>`:""}<button class="btn primary" data-act="pdf" ${downloadsNS||useNativePrint?"":"disabled"}>${I.pdf}${useNativePrint?"طباعة":"تصدير"} ${UI.page==="teams"?"الفرق":"المتابعة"}</button>`;
+  return `${canSave?`<button class="btn soft" data-act="save" ${dirty?"":"disabled"}>${I.save}حفظ</button>`:""}<button class="btn primary" data-act="pdf" ${downloadsNS?"":"disabled"}>${I.pdf}تصدير ${UI.page==="teams"?"الفرق":"المتابعة"} PDF</button>`;
 }
 function render(){
   const totAll=S.teams.length*S.sections.length,totDone=S.teams.reduce((a,t)=>a+S.sections.filter(s=>cell(t,s.id).p>=100).length,0);
@@ -879,7 +879,6 @@ function buildTeamsReport(){
 function buildPrintReport(){const {rep,foot}=UI.page==="teams"?buildTeamsReport():buildReport();rep.appendChild(foot)}
 window.addEventListener("beforeprint",buildPrintReport);
 async function exportPdf(btn){
-  if(useNativePrint){buildPrintReport();window.print();toast("لحفظه PDF اختر ذلك من شاشة الطباعة.");return}
   if(!downloadsNS){toast("تنزيل الملفات غير متاح في هذا العرض.");return}
   if(!window.html2canvas||!window.jspdf){toast("لم تُحمَّل أدوات PDF. أعد فتح الصفحة.");return}
   const btns=document.querySelectorAll('[data-act="pdf"]');btns.forEach(b=>{b.disabled=true});const old=btn.innerHTML;btn.textContent="جارٍ التجهيز…";
@@ -890,10 +889,10 @@ async function exportPdf(btn){
     const blocks=[...rep.children];rep.appendChild(foot);
     const {jsPDF}=window.jspdf;const pdf=new jsPDF({unit:"pt",format:"a4"});
     const W=pdf.internal.pageSize.getWidth(),H=pdf.internal.pageSize.getHeight(),M=34,UW=W-2*M,FOOT=30;
-    const fc=await html2canvas(foot,{scale:2,backgroundColor:"#ffffff",logging:false});const fh=fc.height*UW/fc.width;const fimg=fc.toDataURL("image/png");
+    const fc=await snap(foot);const fh=fc.height*UW/fc.width;const fimg=fc.toDataURL("image/png");
     let y=M,first=true;
     for(const blk of blocks){
-      const cv=await html2canvas(blk,{scale:2,backgroundColor:"#ffffff",logging:false});
+      const cv=await snap(blk);
       let h=cv.height*UW/cv.width,w=UW;
       const room=H-M-FOOT;
       if(h>room-M){w=UW*(room-M)/h;h=room-M}
@@ -915,15 +914,20 @@ async function exportPdf(btn){
   }finally{btns.forEach(b=>{b.disabled=false});btn.innerHTML=old}
 }
 
-/* ---------- print method: WebKit breaks Arabic in html2canvas, so it uses the browser's own print ---------- */
-const useNativePrint=(()=>{
-  const q=new URLSearchParams(location.search).get("print");
-  if(q==="native")return true;if(q==="canvas")return false;
-  const ua=navigator.userAgent;
-  const ios=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
-  return ios||(/Safari\//.test(ua)&&!/Chrome|Chromium|Edg|OPR|Android/.test(ua));
-})();
-if(useNativePrint&&document.fonts){['500 13px "IBM Plex Sans Arabic"','600 13px "IBM Plex Sans Arabic"','700 13px "IBM Plex Sans Arabic"','700 17px "Readex Pro"'].forEach(f=>{document.fonts.load(f,"ع").catch(()=>{})})}
+/* ---------- Arabic in html2canvas: WebKit (iPhone, Safari) returns several rects for one Arabic word, so html2canvas
+   draws it letter by letter and the letters lose their joins. A word on one line is measured as one rect instead. ---------- */
+function oneRectPerWord(doc){
+  const R=doc.defaultView&&doc.defaultView.Range;if(!R||R.prototype.__oneRect)return;
+  const get=R.prototype.getClientRects;
+  R.prototype.getClientRects=function(){
+    const list=get.call(this);if(list.length<2)return list;
+    const rs=[...list].filter(r=>r.width>0);if(!rs.length)return list;
+    const top=Math.min(...rs.map(r=>r.top)),bottom=Math.max(...rs.map(r=>r.bottom)),h=Math.max(...rs.map(r=>r.height));
+    return bottom-top>h*1.5?list:[this.getBoundingClientRect()];
+  };
+  R.prototype.__oneRect=true;
+}
+const snap=el=>html2canvas(el,{scale:2,backgroundColor:"#ffffff",logging:false,onclone:oneRectPerWord});
 
 /* ---------- Cloud sync via Supabase RPC. Empty URL/key = local-only. The key is the public publishable one; tracker_get/tracker_save check the access code on the server. ---------- */
 const SUPABASE_URL="https://bvgjalodboilkqusuegu.supabase.co",SUPABASE_KEY="sb_publishable_-1uWRNFs23fMgWYZT2eG-g_xE0b2HVT";
