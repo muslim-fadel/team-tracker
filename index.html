@@ -554,7 +554,7 @@ function render(){
     <section class="stats">
       <div class="stat hero"><div><span class="k">الأقسام المنجزة</span><div class="v">${totDone} <span style="font-size:.9rem;font-weight:500;color:var(--muted)">من ${totAll}</span></div></div></div>
       <div class="stat t1"><span class="k">الفرق</span><span class="v">${S.teams.length}</span></div>
-      <div class="stat t2"><span class="k">نسبة الإنجاز العامة</span><span class="v">${ov}%</span></div>
+      <div class="stat t2"><span class="k">الأقسام</span><span class="v">${S.sections.length}</span></div>
       <div class="stat t3"><span class="k">أنهت الكل</span><span class="v">${done}</span></div>
     </section>
 
@@ -609,7 +609,7 @@ function sheet(){
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
     <div class="grab"></div>
     <div class="sheet-head"><h3 id="sheetTitle">تخصيص</h3><button class="icon-btn" data-close="1" aria-label="إغلاق">${I.x}</button></div>
-    <div class="preview">${I.palette}<span class="pbar"><i></i></span><b>68%</b></div>
+    <div class="preview">${I.palette}<span class="pbar"><i></i></span></div>
     <div><div class="field-label">لون الموقع</div>
       <div class="swatches" role="radiogroup" aria-label="لون الموقع">${Object.entries(ACCENTS).map(([k,A])=>`<button role="radio" aria-checked="${cur===k}" data-accent-set="${k}"><span class="dotc" style="background:linear-gradient(135deg,${A.l[0]},${A.l[1]});color:${A.l[6]}">${cur===k?I.check:""}</span>${A.n}</button>`).join("")}</div>
     </div>
@@ -635,7 +635,6 @@ function teamSheet(){
   <div class="sheet" role="dialog" aria-modal="true" aria-label="تفاصيل ${esc(t.name)}">
     <div class="grab"></div>
     <div class="sheet-head" style="gap:10px"><span class="tnum">${i+1}</span><input class="tname" type="text" id="sn-${t.id}" data-tname="${t.id}" value="${esc(t.name)}" aria-label="اسم الفريق"><button class="icon-btn" data-close="1" aria-label="إغلاق">${I.x}</button></div>
-    <div class="sheet-row"><label for="spct-${t.id}" style="font-weight:600">نسبة الإنجاز العامة</label><div class="pct-in"><input type="number" inputmode="numeric" min="0" max="100" id="spct-${t.id}" data-pct="${t.id}" value="${t.pct??""}" placeholder="0"><span>%</span></div></div>
     <div><div class="field-label">الأعضاء · ${memberWord(m.filter(x=>x.trim()).length)}</div>
       ${m.length?`<ol class="members">${m.map((nm,k)=>`<li><span class="mi">${k+1}</span><input class="mname" type="text" id="m-${t.id}-${k}" data-member="${t.id}|${k}" value="${esc(nm)}" aria-label="اسم العضو ${k+1}"><button data-delmember="${t.id}|${k}" aria-label="حذف ${esc(nm)}">${I.x}</button></li>`).join("")}</ol>`:`<div class="no-members" style="margin:0">لا يوجد أعضاء بعد، أضف أول اسم.</div>`}
     </div>
@@ -649,13 +648,12 @@ function teamsPage(){
   return `<section class="stats">
       <div class="stat hero"><div><span class="k">إجمالي الأعضاء</span><div class="v">${totM}</div></div></div>
       <div class="stat t1"><span class="k">الفرق</span><span class="v">${S.teams.length}</span></div>
-      <div class="stat t2"><span class="k">متوسط الإنجاز</span><span class="v">${overall()}%</span></div>
+      <div class="stat t2"><span class="k">الأقسام</span><span class="v">${S.sections.length}</span></div>
       <div class="stat t3"><span class="k">فرق بلا أعضاء</span><span class="v">${S.teams.filter(t=>!(t.members||[]).length).length}</span></div>
     </section>
     <div class="vbar"><h2>الفرق وأعضاؤها</h2><button class="btn sm soft" id="addTeam">${I.plus}إضافة فريق</button></div>
     ${S.teams.length?`<section class="tc-grid">${S.teams.map((t,i)=>{const m=(t.members||[]).filter(x=>x.trim()),p=teamPct(t);return `<button class="tc" data-openteam="${t.id}" aria-label="تفاصيل ${esc(t.name)}">
-      <div class="tc-top"><span class="tnum">${i+1}</span><span class="nm">${esc(t.name)}</span><span class="tc-pct">${p}%</span></div>
-      <div class="roster-bar"><i style="width:${p}%"></i></div>
+      <div class="tc-top"><span class="tnum">${i+1}</span><span class="nm">${esc(t.name)}</span></div>
       <div class="tc-names ${m.length?"":"none"}">${m.length?m.map(esc).join("، "):"لا يوجد أعضاء بعد"}</div>
       <div class="tc-foot"><span>${memberWord(m.length)}</span><span class="open">التفاصيل${I.up}</span></div>
     </button>`}).join("")}</section>`:'<div class="empty">لا توجد فرق بعد. اضغط «إضافة فريق».</div>'}`;
@@ -664,8 +662,7 @@ function trackCard(t,i){
   const m=(t.members||[]).filter(x=>x.trim()),dn=S.sections.filter(s=>cell(t,s.id).p>=100).length,p=teamPct(t);
   const notes=S.sections.map(s=>cell(t,s.id).n).filter(x=>x&&x.trim()).length+(t.note&&t.note.trim()?1:0);
   return `<button class="tc" data-opentrack="${t.id}" aria-label="متابعة ${esc(t.name)}">
-    <div class="tc-top"><span class="tnum">${i+1}</span><span class="nm">${esc(t.name)}</span><span class="pill">منجز ${dn} من ${S.sections.length}</span><span class="tc-pct">${p}%</span></div>
-    <div class="roster-bar"><i style="width:${p}%"></i></div>
+    <div class="tc-top"><span class="tnum">${i+1}</span><span class="nm">${esc(t.name)}</span><span class="pill">منجز ${dn} من ${S.sections.length}</span></div>
     ${m.length?`<div class="mline">${m.map(esc).join("، ")}</div>`:""}
     <div class="tk-secs">${S.sections.map(s=>{const x=ST[stIdx(cell(t,s.id).p)];return `<span class="badge" data-lv="${x[2]}">${esc(s.name)} · <b>${x[1]}</b></span>`}).join("")}</div>
     ${t.note&&t.note.trim()?`<div class="tc-note">${I.pen}<span>${esc(t.note)}</span></div>`:""}
@@ -679,7 +676,6 @@ function trackSheet(){
     <div class="grab"></div>
     <div class="sheet-head" style="gap:10px"><span class="tnum">${i+1}</span><input class="tname" type="text" id="tsn-${t.id}" data-tname="${t.id}" value="${esc(t.name)}" aria-label="اسم الفريق"><button class="icon-btn" data-close="1" aria-label="إغلاق">${I.x}</button></div>
     ${m.length?`<div class="mline" style="white-space:normal;margin-top:-6px">${m.map(esc).join("، ")}</div>`:""}
-    <div class="sheet-row"><label for="tpct-${t.id}" style="font-weight:600">نسبة إنجاز الفريق</label><div class="pct-in"><input type="number" inputmode="numeric" min="0" max="100" id="tpct-${t.id}" data-pct="${t.id}" value="${t.pct??""}" placeholder="0"><span>%</span></div></div>
     <div>${S.sections.map(s=>{const c=cell(t,s.id),key=t.id+"|"+s.id,si=stIdx(c.p);return `<div class="sec">
       <div class="sec-top"><span class="sec-name">${esc(s.name)}</span><span class="badge" data-lv="${ST[si][2]}">${ST[si][1]}</span></div>
       <div class="seg3" role="group" aria-label="حالة ${esc(s.name)}">${ST.map((x,k)=>`<button data-step="${key}|${x[0]}" data-lv="${x[2]}" aria-pressed="${si===k}"><span class="d"></span>${x[1]}</button>`).join("")}</div>
@@ -703,7 +699,6 @@ function teamCard(t,i){
     </div>
     ${del?`<div style="padding:0 14px 12px">${confirmBox()}</div>`:""}
     <div class="team-body">
-    <div class="pct-field"><label for="pct-${t.id}">نسبة الإنجاز العامة<span class="hint">تظهر في التقرير فقط</span></label><div class="pct-in"><input type="number" inputmode="numeric" min="0" max="100" id="pct-${t.id}" data-pct="${t.id}" value="${t.pct??""}" placeholder="0"><span>%</span></div></div>
     ${S.sections.map(s=>{const c=cell(t,s.id),key=t.id+"|"+s.id,si=stIdx(c.p);return `<div class="sec">
       <div class="sec-top"><span class="sec-name">${esc(s.name)}</span><span class="badge" data-lv="${ST[si][2]}">${ST[si][1]}</span></div>
       <div class="seg3" role="group" aria-label="حالة ${esc(s.name)}">${ST.map((x,k)=>`<button data-step="${key}|${x[0]}" data-lv="${x[2]}" aria-pressed="${si===k}"><span class="d"></span>${x[1]}</button>`).join("")}</div>
@@ -714,8 +709,8 @@ function teamCard(t,i){
   </article>`;
 }
 function matrix(){
-  return `<div class="matrix-wrap"><table class="mx"><thead><tr><th>الفريق</th>${S.sections.map(s=>`<th>${esc(s.name)}</th>`).join("")}<th>المنجز</th><th>النسبة العامة</th></tr></thead><tbody>
-  ${S.teams.map(t=>{const dn=S.sections.filter(s=>cell(t,s.id).p>=100).length;return `<tr><td class="tn">${esc(t.name)}</td>${S.sections.map(s=>{const x=ST[stIdx(cell(t,s.id).p)];return `<td><button class="cellbtn" style="width:auto;padding:0 10px;white-space:nowrap" data-cycle="${t.id}|${s.id}" data-lv="${x[2]}" aria-label="${esc(t.name)}، ${esc(s.name)}: ${x[1]}">${x[1]}</button></td>`}).join("")}<td class="tot">${dn} من ${S.sections.length}</td><td><div class="pct-in sm" style="display:inline-flex"><input type="number" inputmode="numeric" min="0" max="100" id="mpct-${t.id}" data-pct="${t.id}" value="${t.pct??""}" placeholder="0" aria-label="نسبة إنجاز ${esc(t.name)}"><span>%</span></div></td></tr>`}).join("")}
+  return `<div class="matrix-wrap"><table class="mx"><thead><tr><th>الفريق</th>${S.sections.map(s=>`<th>${esc(s.name)}</th>`).join("")}<th>المنجز</th></tr></thead><tbody>
+  ${S.teams.map(t=>{const dn=S.sections.filter(s=>cell(t,s.id).p>=100).length;return `<tr><td class="tn">${esc(t.name)}</td>${S.sections.map(s=>{const x=ST[stIdx(cell(t,s.id).p)];return `<td><button class="cellbtn" style="width:auto;padding:0 10px;white-space:nowrap" data-cycle="${t.id}|${s.id}" data-lv="${x[2]}" aria-label="${esc(t.name)}، ${esc(s.name)}: ${x[1]}">${x[1]}</button></td>`}).join("")}<td class="tot">${dn} من ${S.sections.length}</td></tr>`}).join("")}
   </tbody></table></div><div class="hint">اضغط على أي خانة لتغيير الحالة: لم يبدأ ← قيد العمل ← منجز. الملاحظات تُكتب من عرض البطاقات.</div>`;
 }
 function updateSaveUI(){
@@ -836,23 +831,23 @@ function status(p){return p>=100?'<span class="pill p-good">منجز</span>':p==
 function rring(p,size,col){const r=size/2-6,c=2*Math.PI*r,m=size/2;return `<div class="ringbox" style="width:${size}px;height:${size}px"><svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="transform:rotate(-90deg)"><circle cx="${m}" cy="${m}" r="${r}" fill="none" stroke="#EDEFF5" stroke-width="7"/><circle cx="${m}" cy="${m}" r="${r}" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(c*p/100).toFixed(2)} ${c.toFixed(2)}"/></svg><b style="color:${col}">${N(p+"%")}</b></div>`}
 function buildReport(){
   const A=(ACCENTS[S.accent]||ACCENTS.purple).l;
-  const ranked=[...S.teams].sort((a,b)=>teamPct(b)-teamPct(a));
-  const allR=S.teams.map(teamRate).filter(x=>x>0);const avgR=allR.length?(allR.reduce((a,b)=>a+b,0)/allR.length).toFixed(1):"—";
-  const done=S.teams.filter(t=>S.sections.length&&S.sections.every(s=>cell(t,s.id).p>=100)).length,ov=overall();
+  /* Ranked by sections done, then by sections in progress. */
+  const prog=t=>S.sections.reduce((a,s)=>a+(cell(t,s.id).p>=100?2:cell(t,s.id).p>0?1:0),0);
+  const ranked=[...S.teams].sort((a,b)=>prog(b)-prog(a));
+  const done=S.teams.filter(t=>S.sections.length&&S.sections.every(s=>cell(t,s.id).p>=100)).length,totDone=S.teams.reduce((a,t)=>a+S.sections.filter(s=>cell(t,s.id).p>=100).length,0);
   const rep=document.getElementById("report");
   rep.style.setProperty("--ra",A[0]);rep.style.setProperty("--rt",A[1]);rep.style.setProperty("--rs",A[2]);rep.style.setProperty("--rn",A[5]);
   let h=`<div><div class="cover"><div><h1>${esc(S.title)}</h1><div class="sub">تقرير متابعة الإنجاز · ${N(today())}</div></div><div class="logo"><i style="height:16px"></i><i style="height:30px"></i><i style="height:22px"></i></div></div></div>`;
   h+=`<div><div class="kpis">
-    <div class="kpi main"><div class="k">نسبة الإنجاز العامة</div><div class="v">${N(ov+"%")}</div><div class="kmeter"><i style="width:${ov}%"></i></div></div>
+    <div class="kpi main"><div class="k">الأقسام المنجزة</div><div class="v">${N(totDone+" / "+S.teams.length*S.sections.length)}</div></div>
     <div class="kpi"><div class="k">عدد الفرق</div><div class="v">${N(S.teams.length)}</div></div>
     <div class="kpi"><div class="k">عدد الأقسام</div><div class="v">${N(S.sections.length)}</div></div>
     <div class="kpi"><div class="k">فرق أنهت كل الأقسام</div><div class="v">${N(done)}</div></div>
   </div></div>`;
-  h+=`<div><h2 class="sec-title" style="margin-bottom:10px">ترتيب الفرق</h2><table><colgroup><col style="width:12%"><col style="width:32%"><col style="width:18%"><col style="width:38%"></colgroup><thead><tr><th class="c">الترتيب</th><th>الفريق</th><th class="c">أقسام منجزة</th><th>نسبة الإنجاز</th></tr></thead><tbody>${ranked.map((t,i)=>{const p=teamPct(t),r=teamRate(t);return `<tr><td class="c"><span class="rank ${p>0&&i<3?"r"+(i+1):""}">${i+1}</span></td><td class="ell" style="font-weight:700">${esc(t.name)}</td><td class="c">${N(S.sections.filter(s=>cell(t,s.id).p===100).length+" / "+S.sections.length)}</td><td><div style="display:flex;align-items:center;gap:10px"><div class="rbar"><i style="width:${p}%;background:${rc(p)}"></i></div><b style="width:42px;flex:none;color:${rc(p)}">${N(p+"%")}</b></div></td></tr>`}).join("")}</tbody></table>
-  <div class="legend" style="margin-top:10px"><span><i style="background:${RC.good}"></i>من ${N("75%")} إلى ${N("100%")}</span><span><i style="background:${RC.mid}"></i>من ${N("40%")} إلى ${N("74%")}</span><span><i style="background:${RC.low}"></i>أقل من ${N("40%")}</span></div></div>`;
+  h+=`<div><h2 class="sec-title" style="margin-bottom:10px">ترتيب الفرق</h2><table><colgroup><col style="width:14%"><col style="width:56%"><col style="width:30%"></colgroup><thead><tr><th class="c">الترتيب</th><th>الفريق</th><th class="c">أقسام منجزة</th></tr></thead><tbody>${ranked.map((t,i)=>{const dn=S.sections.filter(s=>cell(t,s.id).p===100).length;return `<tr><td class="c"><span class="rank ${prog(t)>0&&i<3?"r"+(i+1):""}">${i+1}</span></td><td class="ell" style="font-weight:700">${esc(t.name)}</td><td class="c">${N(dn+" / "+S.sections.length)}</td></tr>`}).join("")}</tbody></table></div>`;
   h+=`<div><h2 class="sec-title">تفاصيل الفرق</h2></div>`;
-  ranked.forEach((t,i)=>{const p=teamPct(t),r=teamRate(t),dn=S.sections.filter(s=>cell(t,s.id).p===100).length;
-    h+=`<div><div class="tcard"><div class="thead">${rring(p,62,rc(p))}<div class="nm"><h3>${esc(t.name)}</h3>${(t.members||[]).filter(x=>x.trim()).length?`<div class="rmem">${(t.members||[]).filter(x=>x.trim()).map(esc).join("، ")}</div>`:""}<div class="mini"><span>الترتيب ${N(i+1)} من ${N(S.teams.length)}</span><span>أقسام منجزة ${N(dn+" / "+S.sections.length)}</span></div></div>${status(p)}</div>
+  ranked.forEach((t,i)=>{const dn=S.sections.filter(s=>cell(t,s.id).p===100).length,st=S.sections.length&&dn===S.sections.length?100:prog(t)>0?50:0;
+    h+=`<div><div class="tcard"><div class="thead"><div class="nm"><h3>${esc(t.name)}</h3>${(t.members||[]).filter(x=>x.trim()).length?`<div class="rmem">${(t.members||[]).filter(x=>x.trim()).map(esc).join("، ")}</div>`:""}<div class="mini"><span>الترتيب ${N(i+1)} من ${N(S.teams.length)}</span><span>أقسام منجزة ${N(dn+" / "+S.sections.length)}</span></div></div>${status(st)}</div>
     <div class="tbody"><table><colgroup><col style="width:24%"><col style="width:17%"><col style="width:59%"></colgroup><thead><tr><th>القسم</th><th class="c">الحالة</th><th>الملاحظات</th></tr></thead><tbody>
     ${S.sections.map(s=>{const c=cell(t,s.id);return `<tr><td class="ell" style="font-weight:600">${esc(s.name)}</td><td class="c">${status(c.p)}</td><td style="color:#4A5266;font-size:12px;line-height:1.5;white-space:pre-wrap">${esc(c.n)||"—"}</td></tr>`}).join("")}
     </tbody></table></div>${t.note?`<div class="rnote" style="white-space:pre-wrap"><b>ملاحظات عامة: </b>${esc(t.note)}</div>`:""}</div></div>`});
@@ -866,11 +861,11 @@ function buildTeamsReport(){
   rep.style.setProperty("--ra",A[0]);rep.style.setProperty("--rt",A[1]);rep.style.setProperty("--rs",A[2]);rep.style.setProperty("--rn",A[5]);
   const totM=S.teams.reduce((a,t)=>a+(t.members||[]).filter(x=>x.trim()).length,0);
   let h=`<div><div class="cover"><div><h1>الفرق</h1><div class="sub">${esc(S.title)} · ${N(today())}</div></div><div class="logo"><i style="height:16px"></i><i style="height:30px"></i><i style="height:22px"></i></div></div></div>`;
-  h+=`<div><div class="kpis"><div class="kpi main"><div class="k">نسبة الإنجاز العامة</div><div class="v">${N(overall()+"%")}</div><div class="kmeter"><i style="width:${overall()}%"></i></div></div><div class="kpi"><div class="k">عدد الفرق</div><div class="v">${N(S.teams.length)}</div></div><div class="kpi"><div class="k">إجمالي الأعضاء</div><div class="v">${N(totM)}</div></div></div></div>`;
-  h+=`<div><h2 class="sec-title" style="margin-bottom:10px">ملخص الفرق</h2><table><colgroup><col style="width:10%"><col style="width:34%"><col style="width:18%"><col style="width:38%"></colgroup><thead><tr><th class="c">#</th><th>الفريق</th><th class="c">عدد الأعضاء</th><th>نسبة الإنجاز</th></tr></thead><tbody>${S.teams.map((t,i)=>{const p=teamPct(t),n=(t.members||[]).filter(x=>x.trim()).length;return `<tr><td class="c"><span class="rank">${i+1}</span></td><td class="ell" style="font-weight:700">${esc(t.name)}</td><td class="c">${N(n)}</td><td><div style="display:flex;align-items:center;gap:10px"><div class="rbar"><i style="width:${p}%;background:${rc(p)}"></i></div><b style="width:42px;flex:none;color:${rc(p)}">${N(p+"%")}</b></div></td></tr>`}).join("")}</tbody></table></div>`;
+  h+=`<div><div class="kpis"><div class="kpi main"><div class="k">إجمالي الأعضاء</div><div class="v">${N(totM)}</div></div><div class="kpi"><div class="k">عدد الفرق</div><div class="v">${N(S.teams.length)}</div></div><div class="kpi"><div class="k">فرق بلا أعضاء</div><div class="v">${N(S.teams.filter(t=>!(t.members||[]).filter(x=>x.trim()).length).length)}</div></div></div></div>`;
+  h+=`<div><h2 class="sec-title" style="margin-bottom:10px">ملخص الفرق</h2><table><colgroup><col style="width:14%"><col style="width:56%"><col style="width:30%"></colgroup><thead><tr><th class="c">#</th><th>الفريق</th><th class="c">عدد الأعضاء</th></tr></thead><tbody>${S.teams.map((t,i)=>{const n=(t.members||[]).filter(x=>x.trim()).length;return `<tr><td class="c"><span class="rank">${i+1}</span></td><td class="ell" style="font-weight:700">${esc(t.name)}</td><td class="c">${N(n)}</td></tr>`}).join("")}</tbody></table></div>`;
   h+=`<div><h2 class="sec-title">أعضاء الفرق</h2></div>`;
-  S.teams.forEach((t,i)=>{const p=teamPct(t),m=(t.members||[]).filter(x=>x.trim());
-    h+=`<div><div class="tcard"><div class="thead">${rring(p,62,rc(p))}<div class="nm"><h3>${esc(t.name)}</h3><div class="mini"><span>الفريق ${N(i+1)} من ${N(S.teams.length)}</span><span>عدد الأعضاء ${N(m.length)}</span></div></div></div>
+  S.teams.forEach((t,i)=>{const m=(t.members||[]).filter(x=>x.trim());
+    h+=`<div><div class="tcard"><div class="thead"><div class="nm"><h3>${esc(t.name)}</h3><div class="mini"><span>الفريق ${N(i+1)} من ${N(S.teams.length)}</span><span>عدد الأعضاء ${N(m.length)}</span></div></div></div>
     <div class="tbody">${m.length?`<div class="mgrid">${m.map((nm,k)=>`<div class="mcell"><span class="mnum">${k+1}</span><span class="ell">${esc(nm)}</span></div>`).join("")}</div>`:`<div style="color:#9AA2B4;padding:12px 0">لم تُضف أسماء لهذا الفريق.</div>`}</div></div></div>`});
   rep.innerHTML=h;
   const foot=document.createElement("div");foot.innerHTML=`<div class="foot"><span>الفرق · ${esc(S.title)}</span><span>${N(today())}</span></div>`;
@@ -901,7 +896,7 @@ async function exportPdf(btn){
     }
     const n=pdf.getNumberOfPages();
     for(let i=1;i<=n;i++){pdf.setPage(i);pdf.addImage(fimg,"PNG",M,H-M+4-fh,UW,fh);pdf.setFontSize(9);pdf.setTextColor(154,162,180);pdf.text(i+" / "+n,W/2,H-M+4-fh/2+3,{align:"center"})}
-    const name=(isTeams?"الفرق ":"متابعة ")+today().replace(/\//g,"-")+" - "+overall()+"%.pdf";
+    const name=(isTeams?"الفرق ":"متابعة ")+today().replace(/\//g,"-")+".pdf";
     rep.innerHTML="";
     await downloadsNS.save({filename:name,data:pdf.output("blob")});
     toast("تم حفظ ملف PDF");
